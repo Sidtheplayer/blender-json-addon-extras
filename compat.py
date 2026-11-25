@@ -493,6 +493,10 @@ def export_camera(camera_obj):
     transform = []
     blender_to_mc = Quaternion((1.0, 0.0, 0.0), math.radians(-90.0))
 
+    fov = []
+
+    fov_timestamp = []
+   
     for t in timestamp:
         scene.frame_set(t)
         world_mat = mat_mul(
@@ -509,10 +513,38 @@ def export_camera(camera_obj):
         td['sca'] = [round(v, 6) for v in sca]
         transform.append(NoIndent(td))
 
+        ## Make separate timestamp for fov track
+        camera_data = camera_obj.data
+
+        if camera_data.animation_data is not None:
+           fov_action = camera_data.animation_data.action
+           if fov_action is not None:
+            for curve in get_fcurves_from_action(fov_action):
+                if curve.data_path == "lens":
+                    for kf in curve.keyframe_points:
+                        frame = int(kf.co[0])
+
+                        if frame not in fov_timestamp:
+                            fov_timestamp.append(frame)
+        fov_timestamp.sort() 
+
+    for t in fov_timestamp:
+      scene.frame_set(t)
+      fov.append(round(camera_obj.data.lens, 6))
+
+
     output = OrderedDict()
     output['time'] = NoIndent(
         [round(t / scene.render.fps, 4) for t in timestamp])
     output['transform'] = transform
+
+    if fov_timestamp:
+        output['fov'] = OrderedDict([
+           ('time', NoIndent(
+             [round(t / scene.render.fps, 4) for t in fov_timestamp])),
+           ('modifier', NoIndent(fov))
+    ])
+
 
     return output
 
