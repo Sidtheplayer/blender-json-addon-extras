@@ -91,6 +91,10 @@ class ExportToJson(bpy.types.Operator, ExportHelper):
         name="Export Camera",
         description="Export camera transform (always Attributes)",
         default=False)
+    export_fov = BoolProperty(
+            name="Export Camera FOV",
+            description="Export camera fov transform (Special-Needs Special Java capability)",
+            default=False)
     export_only_visible_bones = BoolProperty(
         name="Export Only Visible Bones", default=False)
 
