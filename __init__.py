@@ -120,6 +120,7 @@ class ExportToJson(bpy.types.Operator, ExportHelper):
             box.prop(self, "bake_animation")
         layout.separator()
         layout.prop(self, "export_camera")
+        layout.prop(self, "export_fov")
         if self.export_camera:
             layout.box().label(
                 text="Camera is always exported as Attributes",
