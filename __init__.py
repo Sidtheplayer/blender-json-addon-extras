@@ -128,7 +128,6 @@ class ExportToJson(bpy.types.Operator, ExportHelper):
                 icon='INFO')
         layout.separator()
         layout.prop(self, "export_only_visible_bones")
-        layout.prop(self, "export_only_visible_bones")
 
     def execute(self, context):
         if not self.filepath:
