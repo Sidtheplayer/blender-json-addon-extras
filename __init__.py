@@ -138,7 +138,7 @@ class ExportToJson(bpy.types.Operator, ExportHelper):
 _compat_props(ExportToJson, [
     'filter_glob', 'export_mesh', 'apply_modifiers', 'export_armature',
     'armature_format', 'export_anim', 'animation_format',
-    'optimize_keyframes', 'bake_animation', 'export_camera',
+    'optimize_keyframes', 'bake_animation', 'export_camera', 'export_fov',
     'export_only_visible_bones',
 ])
 
