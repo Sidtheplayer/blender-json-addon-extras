@@ -493,10 +493,6 @@ def export_camera(camera_obj):
     transform = []
     blender_to_mc = Quaternion((1.0, 0.0, 0.0), math.radians(-90.0))
 
-    fov = []
-
-    fov_timestamp = []
-   
     for t in timestamp:
         scene.frame_set(t)
         world_mat = mat_mul(
@@ -513,39 +509,72 @@ def export_camera(camera_obj):
         td['sca'] = [round(v, 6) for v in sca]
         transform.append(NoIndent(td))
 
-        ## Make separate timestamp for fov track
-        camera_data = camera_obj.data
-
-        if camera_data.animation_data is not None:
-           fov_action = camera_data.animation_data.action
-           if fov_action is not None:
-            for curve in get_fcurves_from_action(fov_action):
-                if curve.data_path == "lens":
-                    for kf in curve.keyframe_points:
-                        frame = int(kf.co[0])
-
-                        if frame not in fov_timestamp:
-                            fov_timestamp.append(frame)
-        fov_timestamp.sort() 
-
-    for t in fov_timestamp:
-      scene.frame_set(t)
-      fov.append(round(camera_obj.data.lens, 6))
-
-
     output = OrderedDict()
     output['time'] = NoIndent(
         [round(t / scene.render.fps, 4) for t in timestamp])
     output['transform'] = transform
 
-    if fov_timestamp:
-        output['fov'] = OrderedDict([
-           ('time', NoIndent(
-             [round(t / scene.render.fps, 4) for t in fov_timestamp])),
-           ('modifier', NoIndent(fov))
-    ])
+    return output
 
 
+# -- Camera FOV export --
+
+FOV_DATA_PATHS = {'lens', 'angle', 'angle_x', 'angle_y',
+                  'sensor_width', 'sensor_height', 'sensor_fit',
+                  'lens_unit'}
+
+
+def get_fov_keyframes(camera_obj):
+    anim = getattr(camera_obj.data, 'animation_data', None)
+    if anim is None or anim.action is None:
+        return []
+
+    frames = set()
+    for fc in get_fcurves_from_action(anim.action):
+        if fc.data_path in FOV_DATA_PATHS:
+            for kf in fc.keyframe_points:
+                frames.add(int(round(kf.co[0])))
+    return sorted(frames)
+
+
+def export_fov_track(camera_obj):
+    keyframes = get_fov_keyframes(camera_obj)
+    if not keyframes:
+        return None
+
+    scene = bpy.context.scene
+    original_frame = scene.frame_current
+    cam_data = camera_obj.data
+
+    times = []
+    values = []
+
+    try:
+        # java side doesn't interpolate so bake every frame
+        for t in range(keyframes[0], keyframes[-1] + 1):
+            scene.frame_set(t)
+
+            h_fov = cam_data.angle_x
+            if h_fov <= 0.0 or h_fov >= math.pi:
+                continue
+
+            # focal length on a 36mm sensor
+            focal_eq = 18.0 / math.tan(h_fov / 2.0)
+
+            times.append(round(t / scene.render.fps, 4))
+            values.append(round(focal_eq, 4))
+    finally:
+        scene.frame_set(original_frame)
+
+    if not times:
+        return None
+
+    print("INFO     Exported FOV track: %d sample(s), frames %d - %d"
+          % (len(times), keyframes[0], keyframes[-1]))
+
+    output = OrderedDict()
+    output['time'] = NoIndent(times)
+    output['value'] = NoIndent(values)
     return output
 
 
@@ -557,11 +586,13 @@ def save_common(operator, context, export_mesh_fn, **kwargs):
 
     mesh_obj = armature_obj = camera_obj = None
     mesh_result = armature_result = animation_result = camera_result = None
+    fov_result = None
 
     export_msh    = kwargs.get('export_mesh', True)
     export_armat  = kwargs.get('export_armature', True)
     export_anim   = kwargs.get('export_anim', True)
     export_cam    = kwargs.get('export_camera', False)
+    export_fov    = kwargs.get('export_fov', True)
     apply_mods    = kwargs.get('apply_modifiers', False)
     anim_fmt      = kwargs.get('animation_format', 'ATTR')
     arm_fmt       = kwargs.get('armature_format', 'MAT')
@@ -712,6 +743,16 @@ def save_common(operator, context, export_mesh_fn, **kwargs):
                 "Unexpected error exporting camera: %s" % str(e))
             return {'CANCELLED'}
 
+    if export_cam and export_fov:
+        try:
+            fov_result = export_fov_track(camera_obj)
+        except Exception as e:
+            traceback.print_exc()
+            operator.report(
+                {'ERROR'},
+                "Unexpected error exporting camera FOV: %s" % str(e))
+            return {'CANCELLED'}
+
     if mesh_result is not None:
         output['vertices'] = mesh_result
 
@@ -727,6 +768,9 @@ def save_common(operator, context, export_mesh_fn, **kwargs):
 
     if camera_result is not None and export_cam:
         output['camera'] = camera_result
+
+    if fov_result is not None and export_cam:
+        output['fov'] = fov_result
 
     if not output:
         operator.report(
